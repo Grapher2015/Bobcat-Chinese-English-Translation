@@ -44,8 +44,11 @@ class handler(BaseHTTPRequestHandler):
         except Exception:
             return self._send(400, b'{"ok": false, "error": "bad_request"}')
         auth_key = payload.pop("auth_key", "")
-        if not auth_key or not str(payload.get("text", "")).strip():
+        text = payload.get("text", "")
+        if not auth_key or not str(text).strip():
             return self._send(400, b'{"ok": false, "error": "missing auth_key or text"}')
+        # DeepL API 要求 text 为 string[]（传纯字符串会 400 "Value for 'text' not supported."）
+        payload["text"] = [text]
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             DEEPL_BASE + "/v2/translate", data=data, method="POST",
