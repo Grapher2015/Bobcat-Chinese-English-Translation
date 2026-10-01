@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="system">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中英互译</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --text:#1a2333; --muted:#6b7686;
+    --border:#e2e7ee; --accent:#0f2b46; --accent-2:#2f7cf6; --input:#f7f9fc;
+  }
+  [data-theme="dark"]{
+    --bg:#14181f; --card:#1d232e; --text:#e8edf4; --muted:#8b96a8;
+    --border:#2c3542; --accent:#e8edf4; --accent-2:#5b9dff; --input:#171c25;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:12px 20px;
+    background:var(--card);border-bottom:1px solid var(--border)}
+  header h1{font-size:18px;margin:0;flex:1}
+  .quota{font-size:12px;color:var(--muted);white-space:nowrap}
+  .quota b{color:var(--text)}
+  button{cursor:pointer;border:1px solid var(--border);background:var(--card);
+    color:var(--text);border-radius:8px;padding:6px 12px;font-size:13px}
+  button:hover{border-color:var(--accent-2)}
+  .settings{display:flex;gap:8px;align-items:center;padding:10px 20px;
+    background:var(--card);border-bottom:1px solid var(--border);font-size:13px}
+  .settings input{flex:1;max-width:420px;padding:7px 10px;border:1px solid var(--border);
+    border-radius:8px;background:var(--input);color:var(--text)}
+  main{display:flex;gap:12px;padding:16px 20px;max-width:1200px;margin:0 auto}
+  .pane{flex:1;background:var(--card);border:1px solid var(--border);
+    border-radius:12px;display:flex;flex-direction:column;min-height:420px}
+  .pane-bar{display:flex;gap:8px;align-items:center;padding:10px 12px;
+    border-bottom:1px solid var(--border)}
+  select{background:var(--input);color:var(--text);border:1px solid var(--border);
+    border-radius:8px;padding:6px 8px;font-size:13px}
+  .pane-bar .sp{flex:1}
+  textarea{flex:1;border:0;outline:0;resize:none;background:transparent;
+    color:var(--text);font-size:16px;line-height:1.7;padding:14px;font-family:inherit}
+  .out{flex:1;padding:14px;font-size:16px;line-height:1.7;white-space:pre-wrap;
+    word-break:break-word;overflow-y:auto}
+  .out.empty{color:var(--muted)}
+  .pane-foot{display:flex;align-items:center;gap:8px;padding:8px 12px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+  .swap{align-self:center;font-size:18px;padding:10px 12px;border-radius:50%;
+    line-height:1}
+  .status{max-width:1200px;margin:0 auto;padding:0 20px 16px;font-size:13px;
+    color:var(--muted);min-height:20px}
+  .status.err{color:#d64545}
+  [data-theme="dark"] .status.err{color:#ff7b7b}
+  @media (max-width:760px){ main{flex-direction:column} .swap{align-self:center;transform:rotate(90deg)} }
+</style>
+</head>
+<body>
+<header>
+  <h1>中英互译</h1>
+  <span class="quota" id="quota" hidden>本月已用 <b id="qUsed">0</b> / <b id="qLimit">500000</b> 字符</span>
+  <button id="themeBtn" title="切换明亮/暗黑">🌓</button>
+</header>
+<div class="settings">
+  <span>DeepL API key：</span>
+  <input type="password" id="keyInput" placeholder="粘贴你的 key，保存在本机浏览器">
+  <button id="saveKey">保存</button>
+  <button id="clearKey">清除</button>
+  <span id="keyState" style="color:var(--muted)"></span>
+</div>
+<main>
+  <section class="pane">
+    <div class="pane-bar">
+      <select id="srcLang">
+        <option value="auto">自动检测</option>
+        <option value="ZH">中文</option>
+        <option value="EN">英文</option>
+      </select>
+      <span class="sp"></span>
+      <button id="clearBtn">清空</button>
+    </div>
+    <textarea id="src" placeholder="在此输入中文或英文，自动实时翻译…" maxlength="5000"></textarea>
+    <div class="pane-foot"><span id="charCount">0 / 5000</span></div>
+  </section>
+  <button class="swap" id="swapBtn" title="互换语言">⇄</button>
+  <section class="pane">
+    <div class="pane-bar">
+      <select id="tgtLang">
+        <option value="EN">英文</option>
+        <option value="ZH">中文</option>
+      </select>
+      <span class="sp"></span>
+      <button id="copyBtn">复制</button>
+      <button id="ttsBtn">朗读</button>
+    </div>
+    <div class="out empty" id="out">译文将显示在这里</div>
+    <div class="pane-foot"><span id="detected"></span></div>
+  </section>
+</main>
+<div class="status" id="status"></div>
+
+<script>
+(function(){
+  "use strict";
+  var API = ""; // 同源：页面由本地代理直接提供
+  var $ = function(id){ return document.getElementById(id); };
+  var src=$("src"), out=$("out"), status=$("status"),
+      srcLang=$("srcLang"), tgtLang=$("tgtLang"),
+      keyInput=$("keyInput"), keyState=$("keyState"),
+      quota=$("quota"), detected=$("detected");
+
+  function store(k,v){
+    try{ v===null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){}
+  }
+  function read(k){
+    try{ return localStorage.getItem(k); }catch(e){ return null; }
+  }
+
+  /* 主题 */
+  function applyTheme(){
+    var t = read("tr-theme") || "system", eff = t;
+    if(t==="system") eff = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", eff);
+  }
+  $("themeBtn").onclick = function(){
+    var cur = document.documentElement.getAttribute("data-theme");
+    store("tr-theme", cur==="dark" ? "light" : "dark"); applyTheme();
+  };
+  applyTheme();
+
+  /* key */
+  function getKey(){ return read("tr-deepl-key") || ""; }
+  function refreshKeyState(){
+    keyState.textContent = getKey() ? "已保存（仅存本机浏览器）" : "未设置 key";
+    keyInput.value = "";
+  }
+  $("saveKey").onclick = function(){
+    var k = keyInput.value.trim();
+    if(!k){ setStatus("请先粘贴 key", true); return; }
+    setStatus("正在验证 key…");
+    fetch(API+"/api/usage?auth_key="+encodeURIComponent(k)).then(function(r){
+      if(r.status===403) throw new Error("key 无效，请检查后重试");
+      if(!r.ok) throw new Error("验证失败（HTTP "+r.status+"）");
+      return r.json();
+    }).then(function(u){
+      store("tr-deepl-key", k); refreshKeyState(); renderQuota(u);
+      setStatus("key 有效，已保存。"); translate();
+    }).catch(function(e){ setStatus(e.message, true); });
+  };
+  $("clearKey").onclick = function(){
+    store("tr-deepl-key", null); refreshKeyState();
+    quota.hidden = true; setStatus("key 已清除。");
+  };
+  refreshKeyState();
+
+  function renderQuota(u){
+    if(u && typeof u.character_count==="number"){
+      $("qUsed").textContent = u.character_count.toLocaleString();
+      $("qLimit").textContent = (u.character_limit||500000).toLocaleString();
+      quota.hidden = false;
+    }
+  }
+  if(getKey()){
+    fetch(API+"/api/usage?auth_key="+encodeURIComponent(getKey()))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(renderQuota).catch(function(){});
+  }
+
+  /* 翻译 */
+  var timer=null;
+  function setStatus(msg, isErr){
+    status.textContent = msg || "";
+    status.className = "status"+(isErr?" err":"");
+  }
+  function errText(s){
+    if(s===403) return "API key 无效，请检查设置中的 key";
+    if(s===456) return "本月免费额度已用完";
+    if(s===429) return "请求太频繁，稍后再试";
+    if(s===400) return "请求有误";
+    return "翻译失败（HTTP "+s+"）";
+  }
+  function translate(){
+    var text = src.value.trim(), key = getKey();
+    $("charCount").textContent = src.value.length+" / 5000";
+    if(!text){ out.textContent="译文将显示在这里"; out.className="out empty"; detected.textContent=""; setStatus(""); return; }
+    if(!key){ out.textContent="译文将显示在这里"; out.className="out empty"; setStatus("请先在上方设置 DeepL API key", true); return; }
+    setStatus("翻译中…");
+    var body = { text:text, target_lang:tgtLang.value, auth_key:key };
+    if(srcLang.value!=="auto") body.source_lang = srcLang.value;
+    fetch(API+"/api/translate",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)})
+      .then(function(r){
+        if(!r.ok) throw new Error(errText(r.status));
+        return r.json();
+      })
+      .then(function(d){
+        var t = d.translations && d.translations[0];
+        if(!t) throw new Error("返回为空");
+        out.textContent = t.text; out.className="out";
+        var dl = t.detected_source_language;
+        detected.textContent = dl ? "检测到原文语言："+(dl==="ZH"?"中文":dl==="EN"?"英文":dl) : "";
+        setStatus("");
+        if(getKey()) fetch(API+"/api/usage?auth_key="+encodeURIComponent(key))
+          .then(function(r){ return r.ok?r.json():null; }).then(renderQuota).catch(function(){});
+      })
+      .catch(function(e){
+        setStatus(e.message==="Failed to fetch" ? "连不上服务器，请检查网络后重试" : e.message, true);
+      });
+  }
+  src.addEventListener("input", function(){
+    $("charCount").textContent = src.value.length+" / 5000";
+    clearTimeout(timer); timer=setTimeout(translate, 550);
+  });
+  srcLang.onchange = translate; tgtLang.onchange = translate;
+  $("clearBtn").onclick = function(){ src.value=""; translate(); src.focus(); };
+  $("swapBtn").onclick = function(){
+    var a=srcLang.value, b=tgtLang.value;
+    if(a==="auto"){ setStatus("原文为自动检测时不能互换，请先手动选择原文语言", true); return; }
+    srcLang.value=b; tgtLang.value=a;
+    var t=src.value; src.value = out.className.indexOf("empty")>=0 ? "" : out.textContent;
+    translate();
+  };
+  $("copyBtn").onclick = function(){
+    var t = out.className.indexOf("empty")>=0 ? "" : out.textContent;
+    if(!t) return;
+    navigator.clipboard.writeText(t).then(
+      function(){ setStatus("已复制到剪贴板"); },
+      function(){ setStatus("复制失败", true); });
+  };
+  $("ttsBtn").onclick = function(){
+    var t = out.className.indexOf("empty")>=0 ? "" : out.textContent;
+    if(!t || !("speechSynthesis" in window)) return;
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(t);
+    u.lang = tgtLang.value==="ZH" ? "zh-CN" : "en-US";
+    speechSynthesis.speak(u);
+  };
+})();
+</script>
+</body>
+</html>
