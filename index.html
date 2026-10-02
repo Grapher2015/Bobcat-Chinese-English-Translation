@@ -74,6 +74,11 @@
         <option value="EN">英文</option>
       </select>
       <span class="sp"></span>
+      <select id="modeSel" title="翻译模式">
+        <option value="auto">实时翻译</option>
+        <option value="manual">手动翻译</option>
+      </select>
+      <button id="translateBtn" hidden>翻译</button>
       <button id="clearBtn">清空</button>
     </div>
     <textarea id="src" placeholder="在此输入中文或英文，自动实时翻译…" maxlength="5000"></textarea>
@@ -104,7 +109,8 @@
   var src=$("src"), out=$("out"), status=$("status"),
       srcLang=$("srcLang"), tgtLang=$("tgtLang"),
       keyInput=$("keyInput"), keyState=$("keyState"),
-      quota=$("quota"), detected=$("detected");
+      quota=$("quota"), detected=$("detected"),
+      modeSel=$("modeSel"), translateBtn=$("translateBtn");
 
   function store(k,v){
     try{ v===null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){}
@@ -204,18 +210,46 @@
         setStatus(e.message==="Failed to fetch" ? "连不上服务器，请检查网络后重试" : e.message, true);
       });
   }
+  /* 翻译模式：auto=实时翻译，manual=手动点按钮 */
+  function getMode(){ return read("tr-mode") || "auto"; }
+  function applyMode(){
+    var m = getMode();
+    modeSel.value = m;
+    translateBtn.hidden = (m !== "manual");
+    src.placeholder = m==="manual"
+      ? "在此输入中文或英文，点「翻译」按钮翻译…"
+      : "在此输入中文或英文，自动实时翻译…";
+  }
+  function maybeAuto(){ if(getMode()==="auto") translate(); }
+  function resetOut(){
+    out.textContent="译文将显示在这里"; out.className="out empty";
+    detected.textContent=""; setStatus("");
+  }
+  modeSel.onchange = function(){
+    store("tr-mode", modeSel.value); applyMode();
+    if(modeSel.value==="auto" && src.value.trim()) translate();
+  };
+  translateBtn.onclick = translate;
+  applyMode();
+
   src.addEventListener("input", function(){
     $("charCount").textContent = src.value.length+" / 5000";
-    clearTimeout(timer); timer=setTimeout(translate, 550);
+    clearTimeout(timer);
+    if(getMode()==="auto") timer=setTimeout(translate, 550);
   });
-  srcLang.onchange = translate; tgtLang.onchange = translate;
-  $("clearBtn").onclick = function(){ src.value=""; translate(); src.focus(); };
+  srcLang.onchange = maybeAuto; tgtLang.onchange = maybeAuto;
+  $("clearBtn").onclick = function(){
+    src.value=""; $("charCount").textContent="0 / 5000";
+    if(getMode()==="auto") translate(); else resetOut();
+    src.focus();
+  };
   $("swapBtn").onclick = function(){
     var a=srcLang.value, b=tgtLang.value;
     if(a==="auto"){ setStatus("原文为自动检测时不能互换，请先手动选择原文语言", true); return; }
     srcLang.value=b; tgtLang.value=a;
     var t=src.value; src.value = out.className.indexOf("empty")>=0 ? "" : out.textContent;
-    translate();
+    $("charCount").textContent = src.value.length+" / 5000";
+    if(getMode()==="auto") translate();
   };
   $("copyBtn").onclick = function(){
     var t = out.className.indexOf("empty")>=0 ? "" : out.textContent;
