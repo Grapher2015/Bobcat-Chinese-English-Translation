@@ -45,11 +45,24 @@
     border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
   .swap{align-self:center;font-size:18px;padding:10px 12px;border-radius:50%;
     line-height:1}
+  .midcol{display:flex;flex-direction:column;gap:10px;align-items:center;align-self:center}
+  #translateBtn{font-size:14px;padding:10px 18px;border-radius:10px;font-weight:600;
+    border-color:var(--accent-2)}
+  .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+    user-select:none;font-size:13px;color:var(--muted)}
+  .switch input{display:none}
+  .switch .track{width:40px;height:22px;border-radius:11px;background:var(--border);
+    position:relative;transition:background .2s;flex:none}
+  .switch .track::after{content:"";position:absolute;top:3px;left:3px;width:16px;
+    height:16px;border-radius:50%;background:#fff;transition:left .2s;
+    box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .switch input:checked + .track{background:var(--accent-2)}
+  .switch input:checked + .track::after{left:21px}
   .status{max-width:1200px;margin:0 auto;padding:0 20px 16px;font-size:13px;
     color:var(--muted);min-height:20px}
   .status.err{color:#d64545}
   [data-theme="dark"] .status.err{color:#ff7b7b}
-  @media (max-width:760px){ main{flex-direction:column} .swap{align-self:center;transform:rotate(90deg)} }
+  @media (max-width:760px){ main{flex-direction:column} .swap{transform:rotate(90deg)} .midcol{flex-direction:row} }
 </style>
 </head>
 <body>
@@ -74,17 +87,20 @@
         <option value="EN">英文</option>
       </select>
       <span class="sp"></span>
-      <select id="modeSel" title="翻译模式">
-        <option value="auto">实时翻译</option>
-        <option value="manual">手动翻译</option>
-      </select>
-      <button id="translateBtn" hidden>翻译</button>
+      <label class="switch" title="切换实时翻译 / 手动翻译">
+        <span id="modeLabel">实时翻译</span>
+        <input type="checkbox" id="modeToggle">
+        <span class="track"></span>
+      </label>
       <button id="clearBtn">清空</button>
     </div>
-    <textarea id="src" placeholder="在此输入中文或英文，自动实时翻译…" maxlength="5000"></textarea>
-    <div class="pane-foot"><span id="charCount">0 / 5000</span></div>
+    <textarea id="src" placeholder="在此输入中文或英文，自动实时翻译…" maxlength="30000"></textarea>
+    <div class="pane-foot"><span id="charCount">0 / 30000</span></div>
   </section>
-  <button class="swap" id="swapBtn" title="互换语言">⇄</button>
+  <div class="midcol">
+    <button id="translateBtn" hidden>翻译</button>
+    <button class="swap" id="swapBtn" title="互换语言">⇄</button>
+  </div>
   <section class="pane">
     <div class="pane-bar">
       <select id="tgtLang">
@@ -110,7 +126,8 @@
       srcLang=$("srcLang"), tgtLang=$("tgtLang"),
       keyInput=$("keyInput"), keyState=$("keyState"),
       quota=$("quota"), detected=$("detected"),
-      modeSel=$("modeSel"), translateBtn=$("translateBtn");
+      modeToggle=$("modeToggle"), modeLabel=$("modeLabel"),
+      translateBtn=$("translateBtn");
 
   function store(k,v){
     try{ v===null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){}
@@ -184,7 +201,7 @@
   }
   function translate(){
     var text = src.value.trim(), key = getKey();
-    $("charCount").textContent = src.value.length+" / 5000";
+    $("charCount").textContent = src.value.length+" / 30000";
     if(!text){ out.textContent="译文将显示在这里"; out.className="out empty"; detected.textContent=""; setStatus(""); return; }
     if(!key){ out.textContent="译文将显示在这里"; out.className="out empty"; setStatus("请先在上方设置 DeepL API key", true); return; }
     setStatus("翻译中…");
@@ -210,11 +227,13 @@
         setStatus(e.message==="Failed to fetch" ? "连不上服务器，请检查网络后重试" : e.message, true);
       });
   }
-  /* 翻译模式：auto=实时翻译，manual=手动点按钮 */
+  /* 翻译模式：开关开=手动翻译，关=实时翻译 */
+  var srcLangAuto = false; // 标记源语言是否由切手动时自动从auto改为ZH
   function getMode(){ return read("tr-mode") || "auto"; }
   function applyMode(){
     var m = getMode();
-    modeSel.value = m;
+    modeToggle.checked = (m === "manual");
+    modeLabel.textContent = m==="manual" ? "手动翻译" : "实时翻译";
     translateBtn.hidden = (m !== "manual");
     src.placeholder = m==="manual"
       ? "在此输入中文或英文，点「翻译」按钮翻译…"
@@ -225,21 +244,30 @@
     out.textContent="译文将显示在这里"; out.className="out empty";
     detected.textContent=""; setStatus("");
   }
-  modeSel.onchange = function(){
-    store("tr-mode", modeSel.value); applyMode();
-    if(modeSel.value==="auto" && src.value.trim()) translate();
+  modeToggle.onchange = function(){
+    var m = modeToggle.checked ? "manual" : "auto";
+    store("tr-mode", m);
+    if(m==="manual"){
+      // 手动模式下源语言跟随切换：仅当当前为自动检测时默认改为中文
+      if(srcLang.value==="auto"){ srcLang.value="ZH"; srcLangAuto=true; }
+    }else{
+      if(srcLangAuto && srcLang.value==="ZH") srcLang.value="auto";
+      srcLangAuto=false;
+    }
+    applyMode();
+    if(m==="auto" && src.value.trim()) translate();
   };
   translateBtn.onclick = translate;
   applyMode();
 
   src.addEventListener("input", function(){
-    $("charCount").textContent = src.value.length+" / 5000";
+    $("charCount").textContent = src.value.length+" / 30000";
     clearTimeout(timer);
     if(getMode()==="auto") timer=setTimeout(translate, 550);
   });
   srcLang.onchange = maybeAuto; tgtLang.onchange = maybeAuto;
   $("clearBtn").onclick = function(){
-    src.value=""; $("charCount").textContent="0 / 5000";
+    src.value=""; $("charCount").textContent="0 / 30000";
     if(getMode()==="auto") translate(); else resetOut();
     src.focus();
   };
@@ -248,7 +276,7 @@
     if(a==="auto"){ setStatus("原文为自动检测时不能互换，请先手动选择原文语言", true); return; }
     srcLang.value=b; tgtLang.value=a;
     var t=src.value; src.value = out.className.indexOf("empty")>=0 ? "" : out.textContent;
-    $("charCount").textContent = src.value.length+" / 5000";
+    $("charCount").textContent = src.value.length+" / 30000";
     if(getMode()==="auto") translate();
   };
   $("copyBtn").onclick = function(){
